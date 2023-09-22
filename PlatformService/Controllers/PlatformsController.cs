@@ -7,6 +7,7 @@ using PlatformService.Data;
 using PlatformService.Dtos;
 using PlatformService.Models;
 using PlatformService.SyncDataServices.Http;
+using PlatformService.AsyncDataServices;
 
 namespace PlatformService.Controllers
 {
@@ -17,12 +18,14 @@ namespace PlatformService.Controllers
         private readonly IPlatformRepo _repo;
         private readonly IMapper _mapper;
         private readonly ICommandDataClient _commandClient;
+        private readonly IMessageBusClient _publisher;
 
-        public PlatformsController(IPlatformRepo repo, IMapper mapper, ICommandDataClient commandClient)
+        public PlatformsController(IPlatformRepo repo, IMapper mapper, ICommandDataClient commandClient, IMessageBusClient publisher)
         {
             _repo = repo;
             _mapper = mapper;
             _commandClient = commandClient;
+            _publisher = publisher;
         }
 
         [HttpGet]
@@ -53,6 +56,7 @@ namespace PlatformService.Controllers
 
             var platformToReturn = _mapper.Map<PlatformReadDto>(platform);
 
+            //Send sync message
             try
             {
                 await _commandClient.SendPlatformToCommand(platformToReturn);
@@ -60,6 +64,18 @@ namespace PlatformService.Controllers
             catch(Exception ex)
             {
                 Console.WriteLine($"-> Could not send synchronouly: {ex.Message}");
+            }
+
+            //Send Async Message
+            try
+            {
+                var dto = _mapper.Map<PlatformPublishDto>(platformToReturn);
+                dto.Event = "Platform_Created";
+                _publisher.PublishMessage(dto);
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine("---> Could not send asynchronous message");
             }
             return CreatedAtRoute(nameof(GetPlatformById), new { Id = platform.Id}, platformToReturn);
         }
